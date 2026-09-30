@@ -141,11 +141,11 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     <ol class="steps">
       <li>Put four cubes (about 1 cm) in a clear dish on plain white paper. The paper is the colour reference.</li>
       <li>Hold the phone flat, about 30 cm above, so the dish fills a third of the frame.</li>
-      <li>Keep lamp reflections and the phone's shadow off the cubes. A grey card beside the dish helps but is optional.</li>
+      <li>Keep lamp reflections and the phone's shadow off the cubes. No grey card is needed; room light, daylight or an LED lamp all work. Avoid washed-out, over-exposed photos.</li>
       <li>If your camera app allows it, switch off HDR and beauty filters.</li>
     </ol>
     <details><summary>Levels and method</summary>
-      <p class="small">Level 0, fresh or acceptable: ΔE00 below about 4. Level 1, slight to moderate browning: about 4 to 8. Level 2, severe browning: above about 8. The grade comes from a linear discriminant model on eight colour indices (L*, a*, b*, chroma, hue, browning index, whiteness index, yellowness index) measured after a local white-reference correction. On phones it had not seen during training, it graded 87 % of cubes and 91 % of photos correctly (balanced accuracy). Model trained on 324 cubes photographed with POCO C75, Oppo A3 and Realme C73 phones (dataset DOI 10.5281/zenodo.17087416).</p>
+      <p class="small">Level 0, fresh or acceptable: ΔE00 below about 4. Level 1, slight to moderate browning: about 4 to 8. Level 2, severe browning: above about 8. The grade comes from a linear discriminant model on eight colour indices (L*, a*, b*, chroma, hue, browning index, whiteness index, yellowness index) measured after a local white-reference correction. On phones it had not seen during training, it graded 89 % of cubes and 90 % of photos correctly (balanced accuracy). Model trained on 324 cubes photographed with POCO C75, Oppo A3 and Realme C73 phones (dataset DOI 10.5281/zenodo.17087416).</p>
     </details>
   </section>
   <section class="card" aria-labelledby="instTitle">
@@ -153,7 +153,7 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     <p class="small" style="margin:0">Android (Chrome): tap <strong>Install app</strong> below, or open the browser menu and choose <strong>Add to Home screen</strong>. iPhone (Safari): tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. After the first visit the app works without internet.</p>
     <div class="row"><button class="btn" id="installBtn" type="button" hidden>Install app</button><span class="small" id="offlineMsg" role="status"></span></div>
   </section>
-  <p class="small">BrowningScan v1.0 · Research prototype by Prasad P., Pavithra K. and Savitha M. B., Jawaharlal College of Engineering and Technology, Palakkad, India. Dataset: <a href="https://doi.org/10.5281/zenodo.17087416">10.5281/zenodo.17087416</a>. Results support, and do not replace, laboratory colorimetry.</p>
+  <p class="small">BrowningScan v1.1 · Research prototype by Prasad P., Pavithra K. and Savitha M. B., Jawaharlal College of Engineering and Technology, Palakkad, India. Dataset: <a href="https://doi.org/10.5281/zenodo.17087416">10.5281/zenodo.17087416</a>. Results support, and do not replace, laboratory colorimetry.</p>
 </div>
 
 <script id="coreSrc" type="text/plain">/* BrowningScan core: on-device potato-browning analysis (pure JavaScript, no external libraries).
@@ -475,6 +475,14 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     return { level: s.indexOf(mx), prob: e.map(v => v / se) };
   }
 
+  // white-paper reference for segmentation when no grey card is used: median RGB of the 80th-95th luminance percentile band
+  function paperRef(rgb, N) {
+    const L = new Float32Array(N); for (let i = 0; i < N; i++) L[i] = rgb[3 * i] + rgb[3 * i + 1] + rgb[3 * i + 2];
+    const s = Float32Array.from(L).sort(), lo = s[Math.floor(0.80 * N)], hi = s[Math.floor(0.95 * N)];
+    const R = [], Gc = [], B = []; for (let i = 0; i < N; i++) if (L[i] >= lo && L[i] <= hi) { R.push(rgb[3 * i]); Gc.push(rgb[3 * i + 1]); B.push(rgb[3 * i + 2]); }
+    return [median(R), median(Gc), median(B)];
+  }
+
   // ---------- public: analyse an RGBA ImageData-like object ----------
   function analyse(imgData, M, opts = {}) {
     const t0 = (typeof performance !== 'undefined' ? performance : Date).now();
@@ -484,8 +492,9 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     const sc0 = MAXS / Math.max(W0, H0), W = Math.round(W0 * sc0), H = Math.round(H0 * sc0), N = W * H;
     if (W !== W0 || H !== H0) rgb = resizeArea(rgb, W0, H0, 3, W, H);
     const card = findCard(rgb, W, H), seg = new Float32Array(3 * N);
-    if (card.rgb) { const g = card.rgb.map(v => 0.25 / Math.max(v, 1e-3)); for (let i = 0; i < N; i++) for (let c = 0; c < 3; c++) seg[3 * i + c] = Math.min(1, Math.min(1.6, rgb[3 * i + c] * g[c]) * 1.6); }
-    else seg.set(rgb);
+    const useCard = card.rgb && opts.segRef === 'card';
+    if (useCard) { const g = card.rgb.map(v => 0.25 / Math.max(v, 1e-3)); for (let i = 0; i < N; i++) for (let c = 0; c < 3; c++) seg[3 * i + c] = Math.min(1, Math.min(1.6, rgb[3 * i + c] * g[c]) * 1.6); }
+    else { const p = paperRef(rgb, N), T = [0.82, 0.80, 0.74], g = p.map((v, c) => T[c] / Math.max(v, 1e-3)); for (let i = 0; i < N; i++) for (let c = 0; c < 3; c++) seg[3 * i + c] = Math.min(1, rgb[3 * i + c] * g[c]); }
     const seeds = segmentCubes(seg, W, H, card.mask);
     const masks = seeds.map(sd => (opts.noRefine ? sd : refine(seg, W, H, sd, opts)));
     let allC = new Uint8Array(N); masks.forEach(m => { for (let i = 0; i < N; i++) if (m[i]) allC[i] = 1; }); allC = dilate(allC, W, H, 8);
@@ -500,7 +509,6 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     const warnings = [];
     if (cubes.length !== 4) warnings.push(`Found ${cubes.length} of 4 cubes. Retake the photo from directly above, with the cubes on white paper.`);
     if (cubes.some(c => c.features.ringSatFrac > 0.05)) warnings.push('Background around some cubes is over-exposed (glare). Avoid direct lamp reflections.');
-    if (!card.rgb) warnings.push('Grey card not found. Analysis continues; the card only helps cube detection.');
     const ms = (typeof performance !== 'undefined' ? performance : Date).now() - t0;
     return { W, H, rgb, cubes, masks, cardMask: card.mask, sampleLevel: sample, votes, warnings, ms };
   }

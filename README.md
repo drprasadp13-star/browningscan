@@ -7,7 +7,7 @@ BrowningScan grades enzymatic browning of fresh-cut potato cubes from a single s
 ## How to use
 
 1. Put four potato cubes (about 1 cm) in a clear dish on plain white paper. The paper is the colour reference.
-2. Hold the phone flat, about 30 cm above the dish, and avoid lamp reflections and the phone's shadow on the cubes.
+2. Hold the phone flat, about 30 cm above the dish, and avoid lamp reflections and the phone's shadow on the cubes. No grey card is needed, and ordinary room light, daylight or an LED lamp can be used. Avoid over-exposed (washed-out) photos.
 3. Tap **Take photo** (or **Choose from gallery**).
 4. Read the result:
    - **Level 0** (green): fresh or acceptable, ΔE00 below about 4
@@ -22,7 +22,7 @@ BrowningScan grades enzymatic browning of fresh-cut potato cubes from a single s
 
 ## How it works
 
-The app finds the four cubes (threshold sweep on local yellowness contrast, then colour-model refinement), corrects colour against the white paper next to each cube, computes eight CIELAB colour indices, and applies a linear discriminant model (43 parameters). On phones that were not used for training, it graded 89 % of cubes and 93 % of photos correctly (balanced accuracy).
+The app balances the photo against the white paper, finds the four cubes (threshold sweep on local yellowness contrast, then colour-model refinement), corrects colour against the white paper next to each cube, computes eight CIELAB colour indices, and applies a linear discriminant model (43 parameters). On phones that were not used for training, it graded 89 % of cubes and 90 % of photos correctly (balanced accuracy). In simulated lighting tests (warmer, cooler, dimmer or unevenly lit photos, with or without the grey card) cube accuracy stayed between 85 % and 91 %.
 
 ## Files
 

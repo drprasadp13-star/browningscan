@@ -90,7 +90,7 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
   <header>
     <span class="eyebrow">Fresh-cut potato · enzymatic browning</span>
     <h1>BrowningScan</h1>
-    <p class="lede">Photograph four potato cubes on white paper. The phone finds each cube, corrects the colour against the paper around it, and grades browning. Nothing leaves your device.</p>
+    <p class="lede">Photograph one to four potato cubes on white paper. The phone finds each cube, corrects the colour against the paper around it, and grades browning. Nothing leaves your device.</p>
   </header>
 
   <section class="card" aria-labelledby="capTitle">
@@ -98,6 +98,7 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     <div class="row">
       <label class="f" for="sampleName">Sample name<input id="sampleName" type="text" placeholder="e.g. Batch 3, plate A"></label>
       <label class="f" for="treatment">Treatment<select id="treatment"><option>Untreated</option><option>Lemon juice</option><option>Saltwater</option><option>Other</option></select></label>
+      <label class="f" for="nCubes">Cubes in photo<select id="nCubes"><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4" selected>4</option></select></label>
     </div>
     <div class="row">
       <label class="btn" for="camInput">Take photo<input id="camInput" class="sr" type="file" accept="image/*" capture="environment"></label>
@@ -139,7 +140,7 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
   <section class="card" aria-labelledby="howTitle">
     <h2 id="howTitle">How to take the photo</h2>
     <ol class="steps">
-      <li>Put four cubes (about 1 cm) in a clear dish on plain white paper. The paper is the colour reference.</li>
+      <li>Put one to four cubes (about 1 cm) in a clear dish on plain white paper, and set <strong>Cubes in photo</strong> to match. The paper is the colour reference. Four cubes give the most reliable grade, because the result is a vote across cubes.</li>
       <li>Hold the phone flat, about 30 cm above, so the dish fills a third of the frame.</li>
       <li>Keep lamp reflections and the phone's shadow off the cubes. No grey card is needed; room light, daylight or an LED lamp all work. Avoid washed-out, over-exposed photos.</li>
       <li>If your camera app allows it, switch off HDR and beauty filters.</li>
@@ -153,7 +154,7 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     <p class="small" style="margin:0">Android (Chrome): tap <strong>Install app</strong> below, or open the browser menu and choose <strong>Add to Home screen</strong>. iPhone (Safari): tap <strong>Share</strong>, then <strong>Add to Home Screen</strong>. After the first visit the app works without internet.</p>
     <div class="row"><button class="btn" id="installBtn" type="button" hidden>Install app</button><span class="small" id="offlineMsg" role="status"></span></div>
   </section>
-  <p class="small">BrowningScan v1.1 · Research prototype by Prasad P., Pavithra K. and Savitha M. B., Jawaharlal College of Engineering and Technology, Palakkad, India. Dataset: <a href="https://doi.org/10.5281/zenodo.17087416">10.5281/zenodo.17087416</a>. Results support, and do not replace, laboratory colorimetry.</p>
+  <p class="small">BrowningScan v1.2 · Research prototype by Prasad P., Pavithra K. and Savitha M. B., Jawaharlal College of Engineering and Technology, Palakkad, India. Dataset: <a href="https://doi.org/10.5281/zenodo.17087416">10.5281/zenodo.17087416</a>. Results support, and do not replace, laboratory colorimetry.</p>
 </div>
 
 <script id="coreSrc" type="text/plain">/* BrowningScan core: on-device potato-browning analysis (pure JavaScript, no external libraries).
@@ -344,8 +345,14 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     return { mask: null, rgb: null };
   }
 
+  // all k-element subsets of arr (arr has at most 8 items)
+  function combos(arr, k) {
+    const out = [], cur = [];
+    (function rec(start) { if (cur.length === k) { out.push(cur.slice()); return; } for (let i = start; i < arr.length; i++) { cur.push(arr[i]); rec(i + 1); cur.pop(); } })(0);
+    return out;
+  }
   // ---------- 2. cube seeds: delta-b* threshold sweep ----------
-  function segmentCubes(seg, W, H, cardMask) {
+  function segmentCubes(seg, W, H, cardMask, nC = 4) {
     const N = W * H, lab = imgToLab(seg, N);
     const s = 320 / Math.max(W, H), w2 = Math.round(W * s), h2 = Math.round(H * s);
     const small = resizeArea(lab, W, H, 3, w2, h2), bsm = new Float32Array(w2 * h2); for (let i = 0; i < w2 * h2; i++) bsm[i] = small[3 * i + 2];
@@ -367,14 +374,14 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
         const sol = c.area / (polyArea(hullOf(c.px, W, m)) + 1e-6); if (sol < 0.82) continue;
         c.sol = sol; props.push(c);
       }
-      if (props.length < 4) continue;
-      const cand = props.sort((a, b) => b.area - a.area).slice(0, 8), n = cand.length;
-      for (let a = 0; a < n; a++) for (let b = a + 1; b < n; b++) for (let c = b + 1; c < n; c++) for (let d = c + 1; d < n; d++) {
-        const cb = [cand[a], cand[b], cand[c], cand[d]], ar = cb.map(q => q.area), mA = ar.reduce((x, y) => x + y) / 4;
-        const cv = Math.sqrt(ar.reduce((x, y) => x + (y - mA) ** 2, 0) / 4) / mA; if (cv > 0.40) continue;
-        const mx = cb.reduce((x, q) => x + q.cx, 0) / 4, my = cb.reduce((x, q) => x + q.cy, 0) / 4;
+      if (props.length < nC) continue;
+      const cand = props.sort((a, b) => b.area - a.area).slice(0, 8);
+      for (const cb of combos(cand, nC)) {
+        const ar = cb.map(q => q.area), mA = ar.reduce((x, y) => x + y) / nC;
+        const cv = Math.sqrt(ar.reduce((x, y) => x + (y - mA) ** 2, 0) / nC) / mA; if (cv > 0.40) continue;
+        const mx = cb.reduce((x, q) => x + q.cx, 0) / nC, my = cb.reduce((x, q) => x + q.cy, 0) / nC;
         const spread = Math.max(...cb.map(q => Math.hypot(q.cx - mx, q.cy - my))) / Math.sqrt(mA); if (spread > 5.0) continue;
-        const sc = 4 * mA * (1 - cv) * Math.pow(cb.reduce((x, q) => x + q.sol, 0) / 4, 6);
+        const sc = nC * mA * (1 - cv) * Math.pow(cb.reduce((x, q) => x + q.sol, 0) / nC, 6);
         if (sc > bestSc) { bestSc = sc; best = cb; }
       }
     }
@@ -495,8 +502,12 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     const useCard = card.rgb && opts.segRef === 'card';
     if (useCard) { const g = card.rgb.map(v => 0.25 / Math.max(v, 1e-3)); for (let i = 0; i < N; i++) for (let c = 0; c < 3; c++) seg[3 * i + c] = Math.min(1, Math.min(1.6, rgb[3 * i + c] * g[c]) * 1.6); }
     else { const p = paperRef(rgb, N), T = [0.82, 0.80, 0.74], g = p.map((v, c) => T[c] / Math.max(v, 1e-3)); for (let i = 0; i < N; i++) for (let c = 0; c < 3; c++) seg[3 * i + c] = Math.min(1, rgb[3 * i + c] * g[c]); }
-    const seeds = segmentCubes(seg, W, H, card.mask);
-    const masks = seeds.map(sd => (opts.noRefine ? sd : refine(seg, W, H, sd, opts)));
+    const nC = Math.max(1, Math.min(4, Math.round(opts.nCubes || 4)));
+    let seeds = segmentCubes(seg, W, H, card.mask, nC);
+    // if fewer cubes are in the photo than selected, fall back to the largest count that can be found
+    for (let k = nC - 1; !seeds.length && k >= 1; k--) seeds = segmentCubes(seg, W, H, card.mask, k);
+    const masks = seeds.map(sd => (opts.noRefine ? sd : refine(seg, W, H, sd, opts)))
+      .filter(m => { let n = 0; for (let i = 0; i < m.length; i++) n += m[i]; return n >= 30; }); // drop empty or tiny masks
     let allC = new Uint8Array(N); masks.forEach(m => { for (let i = 0; i < N; i++) if (m[i]) allC[i] = 1; }); allC = dilate(allC, W, H, 8);
     const fr = M.fresh_reference_Lab, cubes = [];
     masks.forEach((mk, q) => {
@@ -507,10 +518,11 @@ textarea { width: 100%; min-height: 90px; font: .78rem var(--font-data); border-
     const votes = [0, 0, 0]; cubes.forEach(c => votes[c.level]++);
     let sample = null; if (cubes.length) { const mx = Math.max(...votes); sample = votes.indexOf(mx); if (votes.filter(v => v === mx).length > 1) sample = Math.round(cubes.reduce((a, c) => a + c.level, 0) / cubes.length); }
     const warnings = [];
-    if (cubes.length !== 4) warnings.push(`Found ${cubes.length} of 4 cubes. Retake the photo from directly above, with the cubes on white paper.`);
+    if (!cubes.length) warnings.push(`No cubes found. Retake the photo from directly above, with the cubes on white paper.`);
+    else if (cubes.length !== nC) warnings.push(`Found ${cubes.length} of the ${nC} cube${nC === 1 ? '' : 's'} selected. If the photo has ${cubes.length}, set Cubes in photo to ${cubes.length}; otherwise retake it from directly above.`);
     if (cubes.some(c => c.features.ringSatFrac > 0.05)) warnings.push('Background around some cubes is over-exposed (glare). Avoid direct lamp reflections.');
     const ms = (typeof performance !== 'undefined' ? performance : Date).now() - t0;
-    return { W, H, rgb, cubes, masks, cardMask: card.mask, sampleLevel: sample, votes, warnings, ms };
+    return { W, H, rgb, cubes, masks, cardMask: card.mask, sampleLevel: sample, votes, warnings, ms, nCubes: nC };
   }
 
   G.BrowningCore = { analyse, ciede2000, rgb2lab, MAXS, _internal: { findCard, segmentCubes, refine, cubeIndices, score } };
@@ -524,17 +536,17 @@ const $ = id => document.getElementById(id);
 let worker = null, last = null, lastImg = null;
 try {
   const src = document.getElementById('coreSrc').textContent + `
-    self.onmessage = e => { const { w, h, buf, model } = e.data; const r = BrowningCore.analyse({ width: w, height: h, data: new Uint8ClampedArray(buf) }, model);
+    self.onmessage = e => { const { w, h, buf, model, nCubes } = e.data; const r = BrowningCore.analyse({ width: w, height: h, data: new Uint8ClampedArray(buf) }, model, { nCubes });
       const outlines = r.masks.map(m => { const p = []; for (let i = 0; i < m.length; i++) if (m[i]) { const x = i % r.W, y = (i / r.W) | 0; if (!m[i-1] || !m[i+1] || !m[i-r.W] || !m[i+r.W]) p.push(x, y); } return p; });
       self.postMessage({ W: r.W, H: r.H, cubes: r.cubes, sampleLevel: r.sampleLevel, votes: r.votes, warnings: r.warnings, ms: r.ms, outlines }); };`;
   worker = new Worker(URL.createObjectURL(new Blob([src], { type: 'text/javascript' })));
 } catch (e) { worker = null; }
 if (!worker) { const s = document.createElement('script'); s.textContent = document.getElementById('coreSrc').textContent; document.head.appendChild(s); }
 
-function runAnalysis(w, h, data) {
+function runAnalysis(w, h, data, nCubes) {
   return new Promise((resolve, reject) => {
-    if (worker) { worker.onmessage = e => resolve(e.data); worker.onerror = err => reject(err); worker.postMessage({ w, h, buf: data.buffer, model: MODEL }, [data.buffer]); }
-    else setTimeout(() => { try { const r = BrowningCore.analyse({ width: w, height: h, data }, MODEL);
+    if (worker) { worker.onmessage = e => resolve(e.data); worker.onerror = err => reject(err); worker.postMessage({ w, h, buf: data.buffer, model: MODEL, nCubes }, [data.buffer]); }
+    else setTimeout(() => { try { const r = BrowningCore.analyse({ width: w, height: h, data }, MODEL, { nCubes });
       const outlines = r.masks.map(m => { const p = []; for (let i = 0; i < m.length; i++) if (m[i]) { const x = i % r.W, y = (i / r.W) | 0; if (!m[i-1] || !m[i+1] || !m[i-r.W] || !m[i+r.W]) p.push(x, y); } return p; });
       resolve({ ...r, outlines }); } catch (e) { reject(e); } }, 30);
   });
@@ -543,7 +555,8 @@ async function loadBitmap(blobOrUrl) {
   if (typeof blobOrUrl === 'string') { const img = new Image(); img.src = blobOrUrl; await img.decode(); return img; }
   try { return await createImageBitmap(blobOrUrl, { imageOrientation: 'from-image' }); } catch (e) { const img = new Image(); img.src = URL.createObjectURL(blobOrUrl); await img.decode(); return img; }
 }
-async function analyseSource(src, label) {
+async function analyseSource(src, label, nCubes) {
+  if (!nCubes) nCubes = Number($('nCubes').value) || 4;
   $('busy').hidden = false; ['camInput', 'fileInput'].forEach(id => $(id).disabled = true);
   try {
     const bmp = await loadBitmap(src);
@@ -554,7 +567,7 @@ async function analyseSource(src, label) {
     const view = $('view'), s = 800 / Math.max(c.width, c.height); view.width = Math.round(c.width * s); view.height = Math.round(c.height * s);
     const vx = view.getContext('2d'); vx.imageSmoothingQuality = 'high'; vx.drawImage(c, 0, 0, view.width, view.height);
     lastImg = vx.getImageData(0, 0, view.width, view.height);
-    const r = await runAnalysis(c.width, c.height, new Uint8ClampedArray(id.data));
+    const r = await runAnalysis(c.width, c.height, new Uint8ClampedArray(id.data), nCubes);
     last = { ...r, label, time: new Date() }; render(last);
   } catch (e) {
     $('warnings').innerHTML = `<div class="warn">This photo could not be analysed (${String(e.message || e)}). Try another photo taken from directly above.</div>`;
@@ -601,10 +614,12 @@ $('clearNo').onclick = () => { $('clearConfirm').hidden = true; };
 $('clearYes').onclick = () => { writeLog([]); $('clearConfirm').hidden = true; drawLog(); };
 // ---- inputs ----
 ['camInput', 'fileInput'].forEach(id => $(id).addEventListener('change', e => { const f = e.target.files && e.target.files[0]; if (f) analyseSource(f, f.name); e.target.value = ''; }));
-$('demoSel').addEventListener('change', e => { const k = e.target.value; if (k) { analyseSource(DEMOS[k], 'Sample: ' + e.target.selectedOptions[0].text); } });
+$('demoSel').addEventListener('change', e => { const k = e.target.value; if (k) { analyseSource(DEMOS[k], 'Sample: ' + e.target.selectedOptions[0].text + ' (4 cubes)', 4); } });
 drawLog();
 window.BrowningApp = { analyseSource, MODEL, get last() { return last; } };
-analyseSource(DEMOS.control120, 'Sample: Untreated, 120 min');
+try { const n = localStorage.getItem('browningscan.nCubes'); if (n) $('nCubes').value = n; } catch (e) {}
+$('nCubes').addEventListener('change', e => { try { localStorage.setItem('browningscan.nCubes', e.target.value); } catch (err) {} });
+analyseSource(DEMOS.control120, 'Sample: Untreated, 120 min (4 cubes)', 4);
 // ---- installable app (PWA) ----
 let deferredPrompt = null;
 window.addEventListener('beforeinstallprompt', e => { e.preventDefault(); deferredPrompt = e; $('installBtn').hidden = false; });
